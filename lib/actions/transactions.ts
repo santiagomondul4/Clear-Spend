@@ -10,6 +10,7 @@ function refreshBudgetViews() {
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/transactions");
   revalidatePath("/dashboard/budgets");
+  revalidatePath("/dashboard/payments");
 }
 
 async function rememberCard(kind: "credit" | "debit", name: string) {
@@ -124,6 +125,19 @@ export async function saveTransaction(
 
   refreshBudgetViews();
   return { message: "Saved" };
+}
+
+export async function deletePaymentMethod(id: string): Promise<ActionResult> {
+  const user = await getClaimsUser();
+  if (!user) return { error: "You need to sign in again." };
+  if (!id) return { error: "Choose a card to delete." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("payment_methods").delete().eq("id", id);
+  if (error) return { error: error.message };
+
+  refreshBudgetViews();
+  return { message: "Deleted" };
 }
 
 export async function deleteTransaction(id: string): Promise<ActionResult> {

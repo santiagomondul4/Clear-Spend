@@ -28,6 +28,9 @@ function asNumber(value: number | string | null) {
 }
 
 export const getProfile = cache(async (): Promise<Profile | null> => {
+  const user = await getClaimsUser();
+  if (!user) return null;
+
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("profiles")

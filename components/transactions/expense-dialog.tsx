@@ -2,8 +2,8 @@
 
 import { useActionState, useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
-import { savePaymentMethod, saveTransaction } from "@/lib/actions/transactions";
+import { Trash2, X } from "lucide-react";
+import { deletePaymentMethod, savePaymentMethod, saveTransaction } from "@/lib/actions/transactions";
 import { PAYMENT_KINDS } from "@/lib/constants";
 import { toDatetimeLocalValue } from "@/lib/format";
 import { isCardKind } from "@/lib/payments";
@@ -60,6 +60,9 @@ function ExpenseForm({
   const [cardMessage, setCardMessage] = useState<string | null>(null);
   const [cardError, setCardError] = useState<string | null>(null);
   const [savingCard, startSavingCard] = useTransition();
+  const [confirmCardId, setConfirmCardId] = useState<string | null>(null);
+  const [deletingCardId, setDeletingCardId] = useState<string | null>(null);
+  const [deletingCard, startDeletingCard] = useTransition();
 
   useEffect(() => {
     if (state?.message && !state.error) onClose();
@@ -93,6 +96,26 @@ function ExpenseForm({
         current.some((card) => card.id === result.method?.id) ? current : [...current, result.method!],
       );
       setCardMessage("Card saved");
+    });
+  }
+
+  function removeCard(id: string) {
+    setCardError(null);
+    setCardMessage(null);
+    setDeletingCardId(id);
+    startDeletingCard(async () => {
+      const result = await deletePaymentMethod(id);
+      setDeletingCardId(null);
+      setConfirmCardId(null);
+      if (result.error) {
+        setCardError(result.error);
+        return;
+      }
+      const removed = savedCards.find((card) => card.id === id);
+      if (removed && removed.name === cardName.trim() && removed.kind === paymentKind) {
+        setCardName("");
+      }
+      setSavedCards((current) => current.filter((card) => card.id !== id));
     });
   }
 
@@ -208,20 +231,55 @@ function ExpenseForm({
                   <div className="flex flex-wrap gap-2">
                     {cardsForKind.map((card) => {
                       const selected = card.name === cardName.trim();
+                      const confirming = confirmCardId === card.id;
+                      const chipClass = selected
+                        ? "bg-indigo-500 text-white"
+                        : "bg-white/5 text-slate-300";
                       return (
-                        <button
+                        <span
                           key={card.id}
-                          type="button"
-                          aria-pressed={selected}
-                          onClick={() => setCardName(card.name)}
-                          className={`rounded-full px-3 py-1 text-xs transition ${
-                            selected
-                              ? "bg-indigo-500 text-white"
-                              : "bg-white/5 text-slate-300 hover:bg-white/10"
-                          }`}
+                          className={`inline-flex items-center rounded-full text-xs ${chipClass}`}
                         >
-                          {card.name}
-                        </button>
+                          {confirming ? (
+                            <>
+                              <span className="px-3 py-1">Delete {card.name}?</span>
+                              <button
+                                type="button"
+                                className="px-2 py-1 font-medium"
+                                disabled={deletingCard && deletingCardId === card.id}
+                                onClick={() => removeCard(card.id)}
+                              >
+                                {deletingCard && deletingCardId === card.id ? "Deleting…" : "Delete"}
+                              </button>
+                              <button
+                                type="button"
+                                className="pr-3 pl-1 py-1 opacity-80"
+                                onClick={() => setConfirmCardId(null)}
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                aria-pressed={selected}
+                                onClick={() => setCardName(card.name)}
+                                className="px-3 py-1"
+                              >
+                                {card.name}
+                              </button>
+                              <button
+                                type="button"
+                                aria-label={`Delete ${card.name}`}
+                                onClick={() => setConfirmCardId(card.id)}
+                                className="pr-2 pl-0.5 py-1 opacity-80 hover:opacity-100"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </>
+                          )}
+                        </span>
                       );
                     })}
                   </div>

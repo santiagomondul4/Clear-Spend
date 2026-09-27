@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Banknote, ChevronLeft, ChevronRight, CreditCard, Landmark } from "lucide-react";
+import { useMemo, useState, useTransition } from "react";
+import { Banknote, ChevronLeft, ChevronRight, CreditCard, Landmark, Trash2 } from "lucide-react";
+import { deletePaymentMethod } from "@/lib/actions/transactions";
 import { chargeGroups, monthBounds, monthLabel, shiftMonth } from "@/lib/payments";
 import { formatMoney, formatTimestamp } from "@/lib/format";
 import { useIsClient } from "@/lib/use-is-client";
@@ -23,6 +24,10 @@ export function PaymentsView({
 }) {
   const isClient = useIsClient();
   const [month, setMonth] = useState(() => new Date(generatedAt));
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, startDeleting] = useTransition();
   const categoriesById = useMemo(
     () => new Map(categories.map((category) => [category.id, category.name])),
     [categories],
@@ -45,6 +50,21 @@ export function PaymentsView({
       cashSpent: cash.reduce((sum, group) => sum + group.total, 0),
     };
   }, [isClient, month, paymentMethods, transactions]);
+
+  function methodId(kind: "credit" | "debit", name: string) {
+    return paymentMethods.find((method) => method.kind === kind && method.name === name)?.id;
+  }
+
+  function removeMethod(id: string) {
+    setDeleteError(null);
+    setPendingId(id);
+    startDeleting(async () => {
+      const result = await deletePaymentMethod(id);
+      setPendingId(null);
+      setConfirmId(null);
+      if (result.error) setDeleteError(result.error);
+    });
+  }
 
   return (
     <div className="space-y-6">
@@ -78,6 +98,11 @@ export function PaymentsView({
 
       {snapshot ? (
         <>
+          {deleteError ? (
+            <p role="alert" className="rounded-xl bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+              {deleteError}
+            </p>
+          ) : null}
           <div className="grid gap-4 md:grid-cols-3">
             <Summary
               icon={CreditCard}
@@ -121,6 +146,18 @@ export function PaymentsView({
                   categoriesById={categoriesById}
                   currency={currency}
                   empty="No charges on this statement."
+                  methodId={methodId("credit", group.name)}
+                  confirming={confirmId === methodId("credit", group.name)}
+                  deleting={deleting && pendingId === methodId("credit", group.name)}
+                  onAskDelete={() => {
+                    const id = methodId("credit", group.name);
+                    if (id) setConfirmId(id);
+                  }}
+                  onCancelDelete={() => setConfirmId(null)}
+                  onConfirmDelete={() => {
+                    const id = methodId("credit", group.name);
+                    if (id) removeMethod(id);
+                  }}
                 />
               ))
             )}
@@ -143,6 +180,18 @@ export function PaymentsView({
                   categoriesById={categoriesById}
                   currency={currency}
                   empty="No debit charges this month."
+                  methodId={methodId("debit", group.name)}
+                  confirming={confirmId === methodId("debit", group.name)}
+                  deleting={deleting && pendingId === methodId("debit", group.name)}
+                  onAskDelete={() => {
+                    const id = methodId("debit", group.name);
+                    if (id) setConfirmId(id);
+                  }}
+                  onCancelDelete={() => setConfirmId(null)}
+                  onConfirmDelete={() => {
+                    const id = methodId("debit", group.name);
+                    if (id) removeMethod(id);
+                  }}
                 />
               ))
             )}
@@ -214,6 +263,12 @@ function Statement({
   categoriesById,
   currency,
   empty,
+  methodId,
+  confirming = false,
+  deleting = false,
+  onAskDelete,
+  onCancelDelete,
+  onConfirmDelete,
 }: {
   eyebrow: string;
   title: string;
@@ -224,6 +279,12 @@ function Statement({
   categoriesById: Map<string, string>;
   currency: string;
   empty: string;
+  methodId?: string;
+  confirming?: boolean;
+  deleting?: boolean;
+  onAskDelete?: () => void;
+  onCancelDelete?: () => void;
+  onConfirmDelete?: () => void;
 }) {
   return (
     <article className={panelClass}>
@@ -232,6 +293,36 @@ function Statement({
           <p className="text-xs tracking-wide text-indigo-300 uppercase">{eyebrow}</p>
           <h3 className="text-lg font-semibold">{title}</h3>
           <p className="text-sm text-slate-400">{period}</p>
+          {methodId ? (
+            <div className="mt-2">
+              {confirming ? (
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-slate-300">Remove this saved card?</span>
+                  <button
+                    type="button"
+                    className="text-rose-300"
+                    disabled={deleting}
+                    onClick={onConfirmDelete}
+                  >
+                    {deleting ? "Deleting…" : "Delete"}
+                  </button>
+                  <button type="button" className="text-slate-400" onClick={onCancelDelete}>
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className={ghostButtonClass}
+                  aria-label={`Delete ${eyebrow.toLowerCase()} ${title}`}
+                  onClick={onAskDelete}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete card
+                </button>
+              )}
+            </div>
+          ) : null}
         </div>
         <div className="text-right">
           <p className="text-xs text-slate-400">{totalLabel}</p>
